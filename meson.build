@@ -163,6 +163,7 @@ gsettings_desktop_schemas_dep = dependency('gsettings-desktop-schemas', version:
 libedataserverui_dep = dependency('libedataserverui4-1.0', version: '>= 3.45.1')
 libedataserver_dep = dependency('libedataserver-1.2', version: '>= 3.45.1')
 libecal_dep = dependency('libecal-2.0', version: '>= 3.45.1')
+libebook_dep = dependency('libebook-1.2', version: '>= 3.45.1')
 libsoup_dep = dependency('libsoup-3.0')
 json_glib_dep = dependency('json-glib-1.0')
 libadwaita_dep = dependency('libadwaita-1', version: '>= 1.8.alpha')

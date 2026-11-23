@@ -89,6 +89,9 @@ generate_subtitle (GcalOrganizerRow   *self,
     return NULL;
 
   email = gcal_get_email_from_mailto_uri (gcal_event_organizer_get_uri (organizer));
+  if (!gcal_event_organizer_get_name (organizer) || !*gcal_event_organizer_get_name (organizer))
+    return g_strdup (email);
+
   name_with_email = g_strdup_printf ("%s (%s)", gcal_event_organizer_get_name (organizer), email);
 
   return g_strdup (name_with_email);
