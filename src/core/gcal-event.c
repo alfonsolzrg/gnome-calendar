@@ -2016,3 +2016,168 @@ gcal_event_get_organizer (GcalEvent *self)
 
   return self->organizer;
 }
+
+static gchar *
+attendee_uris (GcalEvent *self)
+{
+  GSList *attendees = e_cal_component_get_attendees (self->component);
+  GString *uris = g_string_new (NULL);
+
+  for (GSList *l = attendees; l != NULL; l = l->next)
+    g_string_append_printf (uris, "%s\n", e_cal_component_attendee_get_value (l->data));
+
+  g_slist_free_full (attendees, e_cal_component_attendee_free);
+  return g_string_free (uris, FALSE);
+}
+
+static void
+reload_attendees (GcalEvent *self)
+{
+  ECalComponentOrganizer *organizer = e_cal_component_get_organizer (self->component);
+
+  g_clear_object (&self->organizer);
+  if (organizer)
+    self->organizer = gcal_event_organizer_new (organizer);
+  e_cal_component_organizer_free (organizer);
+
+  g_list_store_remove_all (self->attendees);
+  load_attendees (self);
+}
+
+/**
+ * gcal_event_add_attendee:
+ * @self: a #GcalEvent
+ * @email: the guest's email address
+ * @organizer_email: (nullable): the calendar owner's address, used when @self has no organizer yet
+ *
+ * Invites @email. The calendar server sends the invitation when the event is saved.
+ *
+ * Returns: %FALSE if @email is already a participant
+ */
+gboolean
+gcal_event_add_attendee (GcalEvent   *self,
+                         const gchar *email,
+                         const gchar *organizer_email)
+{
+  g_autofree gchar *value = g_strconcat ("mailto:", email, NULL);
+  ECalComponentOrganizer *organizer;
+  GSList *attendees;
+
+  g_return_val_if_fail (GCAL_IS_EVENT (self), FALSE);
+
+  attendees = e_cal_component_get_attendees (self->component);
+  for (GSList *l = attendees; l != NULL; l = l->next)
+    {
+      if (g_ascii_strcasecmp (e_cal_component_attendee_get_value (l->data), value) == 0)
+        {
+          g_slist_free_full (attendees, e_cal_component_attendee_free);
+          return FALSE;
+        }
+    }
+
+  organizer = e_cal_component_get_organizer (self->component);
+  if (!organizer && organizer_email)
+    {
+      g_autofree gchar *organizer_value = g_strconcat ("mailto:", organizer_email, NULL);
+
+      organizer = e_cal_component_organizer_new_full (organizer_value, NULL, NULL, NULL);
+      e_cal_component_set_organizer (self->component, organizer);
+      /* Servers list the organizer as an accepted participant, as Google Calendar does. */
+      attendees = g_slist_append (attendees,
+                                  e_cal_component_attendee_new_full (organizer_value, NULL, I_CAL_CUTYPE_INDIVIDUAL,
+                                                                     I_CAL_ROLE_CHAIR, I_CAL_PARTSTAT_ACCEPTED, FALSE,
+                                                                     NULL, NULL, NULL, NULL, NULL));
+    }
+  e_cal_component_organizer_free (organizer);
+
+  attendees = g_slist_append (attendees,
+                              e_cal_component_attendee_new_full (value, NULL, I_CAL_CUTYPE_INDIVIDUAL,
+                                                                 I_CAL_ROLE_REQPARTICIPANT, I_CAL_PARTSTAT_NEEDSACTION, TRUE,
+                                                                 NULL, NULL, NULL, NULL, NULL));
+  e_cal_component_set_attendees (self->component, attendees);
+  g_slist_free_full (attendees, e_cal_component_attendee_free);
+
+  reload_attendees (self);
+  return TRUE;
+}
+
+/**
+ * gcal_event_remove_attendee:
+ * @self: a #GcalEvent
+ * @uri: the participant's calendar address, e.g. "mailto:guest@example.com"
+ *
+ * Removes a participant. Removing the last guest also removes the organizer,
+ * turning @self back into a plain event.
+ */
+void
+gcal_event_remove_attendee (GcalEvent   *self,
+                            const gchar *uri)
+{
+  ECalComponentOrganizer *organizer;
+  GSList *attendees, *kept = NULL;
+  const gchar *organizer_value = NULL;
+
+  g_return_if_fail (GCAL_IS_EVENT (self));
+
+  organizer = e_cal_component_get_organizer (self->component);
+  if (organizer)
+    organizer_value = e_cal_component_organizer_get_value (organizer);
+
+  attendees = e_cal_component_get_attendees (self->component);
+  for (GSList *l = attendees; l != NULL; l = l->next)
+    {
+      if (g_ascii_strcasecmp (e_cal_component_attendee_get_value (l->data), uri) != 0)
+        kept = g_slist_append (kept, e_cal_component_attendee_copy (l->data));
+    }
+
+  if (organizer_value &&
+      (!kept || (!kept->next && g_ascii_strcasecmp (e_cal_component_attendee_get_value (kept->data), organizer_value) == 0)))
+    {
+      g_slist_free_full (g_steal_pointer (&kept), e_cal_component_attendee_free);
+      e_cal_component_set_organizer (self->component, NULL);
+    }
+
+  e_cal_component_set_attendees (self->component, kept);
+  g_slist_free_full (kept, e_cal_component_attendee_free);
+  g_slist_free_full (attendees, e_cal_component_attendee_free);
+  e_cal_component_organizer_free (organizer);
+
+  reload_attendees (self);
+}
+
+/**
+ * gcal_event_attendees_equal:
+ * @event1: a #GcalEvent
+ * @event2: a #GcalEvent
+ *
+ * Returns: %TRUE if both events invite the same participants
+ */
+gboolean
+gcal_event_attendees_equal (GcalEvent *event1,
+                            GcalEvent *event2)
+{
+  g_autofree gchar *uris1 = attendee_uris (event1);
+  g_autofree gchar *uris2 = attendee_uris (event2);
+
+  return g_strcmp0 (uris1, uris2) == 0;
+}
+
+/**
+ * gcal_event_copy_attendees:
+ * @self: the #GcalEvent to change
+ * @source: the #GcalEvent whose organizer and participants are copied
+ */
+void
+gcal_event_copy_attendees (GcalEvent *self,
+                           GcalEvent *source)
+{
+  ECalComponentOrganizer *organizer = e_cal_component_get_organizer (source->component);
+  GSList *attendees = e_cal_component_get_attendees (source->component);
+
+  e_cal_component_set_organizer (self->component, organizer);
+  e_cal_component_set_attendees (self->component, attendees);
+  g_slist_free_full (attendees, e_cal_component_attendee_free);
+  e_cal_component_organizer_free (organizer);
+
+  reload_attendees (self);
+}

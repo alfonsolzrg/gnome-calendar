@@ -25,6 +25,7 @@
 #include "gcal-context.h"
 #include "gcal-debug.h"
 #include "gcal-event-attendee.h"
+#include "gcal-google-meet.h"
 #include "gcal-event-editor-dialog.h"
 #include "gcal-event-editor-section.h"
 #include "gcal-event.h"
@@ -165,8 +166,6 @@ set_event (GcalEventEditorDialog *self,
   gcal_calendar_combo_row_set_calendar (self->calendar_combo_row, calendar);
 
   set_writable (self, !gcal_calendar_is_read_only (calendar));
-  gboolean has_participants = gcal_event_get_organizer (self->edited_event) != NULL;
-  gtk_widget_set_visible (GTK_WIDGET (self->attendees_section), has_participants);
 
   gtk_widget_set_visible (self->cancel_button, self->writable);
 
@@ -178,7 +177,28 @@ set_event (GcalEventEditorDialog *self,
 
   g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_EVENT]);
 
+  gcal_attendees_section_set_calendar (GCAL_ATTENDEES_SECTION (self->attendees_section), calendar, self->writable);
+
   GCAL_EXIT;
+}
+
+static void
+on_calendar_combo_row_calendar_changed_cb (GcalEventEditorDialog *self)
+{
+  if (!self->edited_event)
+    return;
+
+  gcal_attendees_section_set_calendar (GCAL_ATTENDEES_SECTION (self->attendees_section),
+                                       gcal_calendar_combo_row_get_calendar (self->calendar_combo_row),
+                                       self->writable);
+}
+
+static void
+maybe_add_google_meet (GcalEventEditorDialog *self,
+                       GcalEvent             *event)
+{
+  if (gcal_attendees_section_get_add_meet (GCAL_ATTENDEES_SECTION (self->attendees_section)))
+    gcal_google_meet_add (event);
 }
 
 static void
@@ -226,6 +246,7 @@ apply_event_properties_to_template_event (GcalEvent *template_event,
   gcal_event_set_all_day (template_event, gcal_event_get_all_day (event));
   gcal_event_set_date_start (template_event, start_date);
   gcal_event_set_date_end (template_event, end_date);
+  gcal_event_copy_attendees (template_event, event);
 
   gcal_event_remove_all_alarms (template_event);
   for (GList *l = alarms; l != NULL; l = l->next)
@@ -263,6 +284,8 @@ set_up_context (GcalEventEditorDialog *self)
   flatten_model = gtk_flatten_list_model_new (G_LIST_MODEL (g_steal_pointer (&all_calendars)));
 
   adw_combo_row_set_model (ADW_COMBO_ROW (self->calendar_combo_row), G_LIST_MODEL (flatten_model));
+  g_signal_connect_swapped (self->calendar_combo_row, "notify::calendar",
+                            G_CALLBACK (on_calendar_combo_row_calendar_changed_cb), self);
 
   GCAL_EXIT;
 }
@@ -288,17 +311,22 @@ save_event (GcalEventEditorDialog *self,
   alarms_equal = gcal_event_alarms_equal (self->event, self->edited_event);
   schedule_equal = gcal_event_schedule_equal (self->event, self->edited_event);
   strings_equal = gcal_event_strings_equal (self->event, self->edited_event);
-  event_equal = calendar_equal && alarms_equal && schedule_equal && strings_equal;
+  event_equal = calendar_equal && alarms_equal && schedule_equal && strings_equal &&
+                gcal_event_attendees_equal (self->event, self->edited_event);
 
   if (self->event_is_new)
     {
       gcal_event_set_calendar (self->edited_event, selected_calendar);
       gcal_manager_create_event (manager, self->edited_event);
+      maybe_add_google_meet (self, self->edited_event);
       GCAL_RETURN (TRUE);
     }
 
   if (event_equal)
-    GCAL_RETURN (TRUE);
+    {
+      maybe_add_google_meet (self, self->edited_event);
+      GCAL_RETURN (TRUE);
+    }
 
   if (!calendar_equal)
     {
@@ -319,8 +347,23 @@ save_event (GcalEventEditorDialog *self,
     }
 
   gcal_manager_update_event (manager, self->edited_event, GCAL_RECURRENCE_MOD_THIS_ONLY);
+  maybe_add_google_meet (self, self->edited_event);
 
   GCAL_RETURN (TRUE);
+}
+
+static void
+on_remove_attendee_action_activated_cb (GtkWidget  *widget,
+                                        const char *action_name,
+                                        GVariant   *param)
+{
+  GcalEventEditorDialog *self = GCAL_EVENT_EDITOR_DIALOG (widget);
+
+  if (!self->edited_event)
+    return;
+
+  gcal_event_remove_attendee (self->edited_event, g_variant_get_string (param, NULL));
+  gcal_attendees_section_refresh (GCAL_ATTENDEES_SECTION (self->attendees_section));
 }
 
 
@@ -347,6 +390,8 @@ on_show_attendees_detail_page_action_activated_cb (GtkWidget  *widget,
 {
   GcalEventEditorDialog *self = GCAL_EVENT_EDITOR_DIALOG (widget);
 
+  gcal_attendee_details_page_set_removable (GCAL_ATTENDEE_DETAILS_PAGE (self->attendee_details_page),
+                                            gcal_attendees_section_get_can_edit_guests (GCAL_ATTENDEES_SECTION (self->attendees_section)));
   gcal_attendee_details_page_set_attendees (GCAL_ATTENDEE_DETAILS_PAGE (self->attendee_details_page),
                                             self->attendees_model);
 
@@ -475,6 +520,8 @@ on_ask_recurrence_response_save_cb (GcalEvent             *event,
       gcal_manager_update_event (manager, self->edited_event, mod_type);
       break;
     }
+
+  maybe_add_google_meet (self, self->edited_event);
 
   clear_and_hide_dialog (self);
 
@@ -638,6 +685,8 @@ gcal_event_editor_dialog_class_init (GcalEventEditorDialogClass *klass)
   gtk_widget_class_install_action (widget_class, "event-editor.save", NULL, on_event_editor_save_action_activated_cb);
   gtk_widget_class_install_action (widget_class, "event-editor.show-attendees-detail-page", "u",
                                    on_show_attendees_detail_page_action_activated_cb);
+  gtk_widget_class_install_action (widget_class, "event-editor.remove-attendee", "s",
+                                   on_remove_attendee_action_activated_cb);
 }
 
 static void

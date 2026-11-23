@@ -574,6 +574,39 @@ event_schedule_equal (void)
 
 /*********************************************************************************************************************/
 
+static void
+event_edit_attendees (void)
+{
+  g_autoptr (GcalEvent) original = NULL;
+  g_autoptr (GcalEvent) event = NULL;
+  g_autoptr (GError) error = NULL;
+  g_autofree gchar *ical = NULL;
+
+  original = create_event_for_string (STUB_EVENT, &error);
+  g_assert_no_error (error);
+  event = gcal_event_new_from_event (original);
+  g_assert_null (gcal_event_get_organizer (event));
+
+  /* The first guest makes the calendar owner the organizer and an accepted participant. */
+  g_assert_true (gcal_event_add_attendee (event, "guest@example.com", "me@example.com"));
+  g_assert_false (gcal_event_add_attendee (event, "GUEST@example.com", "me@example.com"));
+  g_assert_cmpstr (gcal_event_organizer_get_uri (gcal_event_get_organizer (event)), ==, "mailto:me@example.com");
+  g_assert_cmpuint (g_list_model_get_n_items (gcal_event_get_attendees (event)), ==, 2);
+  g_assert_false (gcal_event_attendees_equal (original, event));
+  ical = e_cal_component_get_as_string (gcal_event_get_component (event));
+  g_assert_nonnull (strstr (ical, "RSVP=TRUE"));
+
+  g_assert_true (gcal_event_add_attendee (event, "other@example.com", "me@example.com"));
+  gcal_event_remove_attendee (event, "mailto:other@example.com");
+  g_assert_cmpuint (g_list_model_get_n_items (gcal_event_get_attendees (event)), ==, 2);
+
+  /* Removing the last guest turns it back into a plain event. */
+  gcal_event_remove_attendee (event, "mailto:guest@example.com");
+  g_assert_null (gcal_event_get_organizer (event));
+  g_assert_cmpuint (g_list_model_get_n_items (gcal_event_get_attendees (event)), ==, 0);
+  g_assert_true (gcal_event_attendees_equal (original, event));
+}
+
 gint
 main (gint   argc,
       gchar *argv[])
@@ -595,6 +628,7 @@ main (gint   argc,
   g_test_add_func ("/event/date/create-tzid", event_date_create_tzid);
   g_test_add_func ("/event/date/check-tz", event_date_check_tz);
   g_test_add_func ("/event/date/get-attendees", event_get_attendees);
+  g_test_add_func ("/event/attendees/edit", event_edit_attendees);
   g_test_add_func ("/event/equal/schedule", event_schedule_equal);
 
   return g_test_run ();

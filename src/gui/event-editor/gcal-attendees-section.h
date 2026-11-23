@@ -20,11 +20,22 @@
 
 #include <adwaita.h>
 
+#include "gcal-calendar.h"
 #include "gcal-event-editor-section.h"
 
 G_BEGIN_DECLS
 
 #define GCAL_TYPE_ATTENDEES_SECTION (gcal_attendees_section_get_type ())
 G_DECLARE_FINAL_TYPE (GcalAttendeesSection, gcal_attendees_section, GCAL, ATTENDEES_SECTION, GcalEventEditorSection)
+
+void                 gcal_attendees_section_refresh              (GcalAttendeesSection *self);
+
+void                 gcal_attendees_section_set_calendar         (GcalAttendeesSection *self,
+                                                                  GcalCalendar         *calendar,
+                                                                  gboolean              writable);
+
+gboolean             gcal_attendees_section_get_add_meet         (GcalAttendeesSection *self);
+
+gboolean             gcal_attendees_section_get_can_edit_guests  (GcalAttendeesSection *self);
 
 G_END_DECLS

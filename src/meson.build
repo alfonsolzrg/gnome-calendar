@@ -7,6 +7,7 @@ gcal_deps = [
   libedataserver_dep,
   libecal_dep,
   libsoup_dep,
+  json_glib_dep,
   libical_dep,
   fribidi_dep,
   glib_dep,

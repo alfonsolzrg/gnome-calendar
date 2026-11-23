@@ -54,6 +54,8 @@ struct _GcalAttendeeDetailsPage
   GtkWidget                *group_not_responded;
 
   GcalEventAttendeeTypeFilterFlags attendee_type_filter_flags;
+
+  gboolean                  removable;
 };
 
 enum
@@ -83,7 +85,11 @@ static GtkWidget *
 create_attendee_row_widget (void *attendee,
                             void *user_data)
 {
-  return gcal_attendee_row_new (attendee);
+  GcalAttendeeDetailsPage *self = user_data;
+  GtkWidget *row = gcal_attendee_row_new (attendee);
+
+  gcal_attendee_row_set_removable (GCAL_ATTENDEE_ROW (row), self->removable);
+  return row;
 }
 
 static void
@@ -275,27 +281,27 @@ gcal_attendee_details_page_init (GcalAttendeeDetailsPage *instance)
   adw_preferences_group_bind_model (ADW_PREFERENCES_GROUP (instance->group_accepted),
                                     G_LIST_MODEL (instance->filter_list_accepted),
                                     create_attendee_row_widget,
-                                    NULL, NULL);
+                                    instance, NULL);
 
   adw_preferences_group_bind_model (ADW_PREFERENCES_GROUP (instance->group_tentative),
                                     G_LIST_MODEL (instance->filter_list_tentative),
                                     create_attendee_row_widget,
-                                    NULL, NULL);
+                                    instance, NULL);
 
   adw_preferences_group_bind_model (ADW_PREFERENCES_GROUP (instance->group_declined),
                                     G_LIST_MODEL (instance->filter_list_declined),
                                     create_attendee_row_widget,
-                                    NULL, NULL);
+                                    instance, NULL);
 
   adw_preferences_group_bind_model (ADW_PREFERENCES_GROUP (instance->group_delegated),
                                     G_LIST_MODEL (instance->filter_list_delegated),
                                     create_attendee_row_widget,
-                                    NULL, NULL);
+                                    instance, NULL);
 
   adw_preferences_group_bind_model (ADW_PREFERENCES_GROUP (instance->group_not_responded),
                                     G_LIST_MODEL (instance->filter_list_not_responded),
                                     create_attendee_row_widget,
-                                    NULL, NULL);
+                                    instance, NULL);
 }
 
 static void
@@ -419,4 +425,20 @@ gcal_attendee_details_page_set_type_filter (GcalAttendeeDetailsPage         *sel
 {
   g_assert (GCAL_IS_ATTENDEE_DETAILS_PAGE (self));
   set_type_filter_flags (self, flags);
+}
+
+/**
+ * gcal_attendee_details_page_set_removable:
+ * @self: a #GcalAttendeeDetailsPage instance.
+ * @removable: whether rows show a button that removes the guest
+ *
+ * Must be called before gcal_attendee_details_page_set_attendees(),
+ * which creates the rows.
+ */
+void
+gcal_attendee_details_page_set_removable (GcalAttendeeDetailsPage *self,
+                                          gboolean                 removable)
+{
+  g_assert (GCAL_IS_ATTENDEE_DETAILS_PAGE (self));
+  self->removable = removable;
 }

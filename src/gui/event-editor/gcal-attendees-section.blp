@@ -1,7 +1,9 @@
 using Gtk 4.0;
+using Adw 1;
 
 template $GcalAttendeesSection: $GcalEventEditorSection {
   $GcalOrganizerRow organizer_row {
+    visible: false;
     organizer: bind template.organizer;
   }
 
@@ -15,5 +17,20 @@ template $GcalAttendeesSection: $GcalEventEditorSection {
     title: _("Resources");
     attendees: bind template.attendees;
     filter-flags: GCAL_EVENT_ATTENDEE_TYPE_FILTER_RESOURCE;
+  }
+
+  Adw.EntryRow add_guest_row {
+    title: _("Add Guest by Email");
+    input-purpose: email;
+    show-apply-button: true;
+    visible: false;
+    apply => $on_add_guest_row_apply_cb() swapped;
+    entry-activated => $on_add_guest_row_apply_cb() swapped;
+  }
+
+  Adw.SwitchRow meet_row {
+    title: _("Google Meet Video Call");
+    subtitle: _("Created when you save");
+    visible: false;
   }
 }

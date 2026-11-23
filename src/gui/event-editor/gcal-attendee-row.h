@@ -30,4 +30,7 @@ G_DECLARE_FINAL_TYPE (GcalAttendeeRow, gcal_attendee_row, GCAL, ATTENDEE_ROW, Ad
 GtkWidget         *gcal_attendee_row_new          (GcalEventAttendee *attendee);
 GcalEventAttendee *gcal_attendee_row_get_attendee (GcalAttendeeRow   *self);
 
+void               gcal_attendee_row_set_removable (GcalAttendeeRow   *self,
+                                                    gboolean           removable);
+
 G_END_DECLS

@@ -20,4 +20,5 @@ sources += files(
   'gcal-time-zone-monitor.c',
   'gcal-event-attendee.c',
   'gcal-event-organizer.c',
+  'gcal-google-meet.c',
 )

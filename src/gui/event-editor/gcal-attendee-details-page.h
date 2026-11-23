@@ -34,6 +34,9 @@ void                 gcal_attendee_details_page_set_attendees          (GcalAtte
 void                 gcal_attendee_details_page_set_type_filter        (GcalAttendeeDetailsPage         *self,
                                                                         GcalEventAttendeeTypeFilterFlags flags);
 
+void                 gcal_attendee_details_page_set_removable          (GcalAttendeeDetailsPage *self,
+                                                                        gboolean                 removable);
+
 G_END_DECLS
 
 #endif

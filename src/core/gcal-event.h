@@ -142,6 +142,19 @@ GListModel *         gcal_event_get_attendees                    (GcalEvent     
 
 GcalEventOrganizer * gcal_event_get_organizer                    (GcalEvent          *self);
 
+gboolean             gcal_event_add_attendee                     (GcalEvent          *self,
+                                                                  const gchar        *email,
+                                                                  const gchar        *organizer_email);
+
+void                 gcal_event_remove_attendee                  (GcalEvent          *self,
+                                                                  const gchar        *uri);
+
+gboolean             gcal_event_attendees_equal                  (GcalEvent          *event1,
+                                                                  GcalEvent          *event2);
+
+void                 gcal_event_copy_attendees                   (GcalEvent          *self,
+                                                                  GcalEvent          *source);
+
 gboolean             gcal_event_alarms_equal                     (GcalEvent          *event1,
                                                                   GcalEvent          *event2);
 

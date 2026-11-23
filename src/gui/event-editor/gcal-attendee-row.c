@@ -274,3 +274,31 @@ gcal_attendee_row_get_attendee (GcalAttendeeRow *self)
 
   return self->attendee;
 }
+
+/**
+ * gcal_attendee_row_set_removable:
+ * @self: a #GcalAttendeeRow
+ * @removable: whether to show a button that removes the guest
+ *
+ * The button activates the event editor's "remove-attendee" action.
+ */
+void
+gcal_attendee_row_set_removable (GcalAttendeeRow *self,
+                                 gboolean         removable)
+{
+  GtkWidget *button;
+
+  g_return_if_fail (GCAL_IS_ATTENDEE_ROW (self));
+
+  if (!removable)
+    return;
+
+  button = gtk_button_new_from_icon_name ("user-trash-symbolic");
+  gtk_widget_set_valign (button, GTK_ALIGN_CENTER);
+  gtk_widget_set_tooltip_text (button, gettext ("Remove Guest"));
+  gtk_widget_add_css_class (button, "flat");
+  gtk_actionable_set_action_name (GTK_ACTIONABLE (button), "event-editor.remove-attendee");
+  gtk_actionable_set_action_target_value (GTK_ACTIONABLE (button),
+                                          g_variant_new_string (gcal_event_attendee_get_uri (self->attendee)));
+  adw_action_row_add_suffix (ADW_ACTION_ROW (self), button);
+}
