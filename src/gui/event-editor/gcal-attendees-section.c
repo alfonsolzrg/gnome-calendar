@@ -486,6 +486,8 @@ gcal_attendees_section_init (GcalAttendeesSection *instance)
   gtk_popover_set_autohide (GTK_POPOVER (instance->suggestions_popover), FALSE);
   gtk_popover_set_has_arrow (GTK_POPOVER (instance->suggestions_popover), FALSE);
   gtk_popover_set_position (GTK_POPOVER (instance->suggestions_popover), GTK_POS_BOTTOM);
+  /* Leave a gap below the field instead of drawing over its edge */
+  gtk_popover_set_offset (GTK_POPOVER (instance->suggestions_popover), 0, 6);
   gtk_popover_set_child (GTK_POPOVER (instance->suggestions_popover), GTK_WIDGET (instance->suggestions));
   gtk_widget_set_parent (instance->suggestions_popover, GTK_WIDGET (instance->add_guest_row));
 
