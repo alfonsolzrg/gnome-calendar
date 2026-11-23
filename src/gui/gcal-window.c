@@ -222,7 +222,10 @@ update_today_action_enabled (GcalWindow *window)
 static void
 focus_last_focused_widget (GcalWindow *self)
 {
-  if (self->last_focused_widget && gtk_widget_grab_focus (self->last_focused_widget))
+  /* A deleted event's widget is hidden; focusing it scrolls the week view to the top */
+  if (self->last_focused_widget &&
+      gtk_widget_get_mapped (self->last_focused_widget) &&
+      gtk_widget_grab_focus (self->last_focused_widget))
     g_clear_weak_pointer (&self->last_focused_widget);
 }
 
