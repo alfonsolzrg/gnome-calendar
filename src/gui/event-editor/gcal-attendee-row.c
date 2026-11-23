@@ -88,14 +88,16 @@ setup_row_title_and_subtitle (GcalAttendeeRow *self)
   g_autoptr (GString) title = NULL;
   g_autoptr (GString) subtitle = NULL;
 
-  /* this is the initial line for both cases */
-  title = g_string_new (gcal_event_attendee_get_name (self->attendee));
   g_autofree const gchar *delegator_email = gcal_get_email_from_mailto_uri (gcal_event_attendee_get_uri (self->attendee));
+  const gchar *name = gcal_event_attendee_get_name (self->attendee);
+
+  /* this is the initial line for both cases; guests without a name go by their email */
+  title = g_string_new (name && *name ? name : delegator_email);
 
   if (gcal_event_attendee_get_part_status (self->attendee) != GCAL_EVENT_ATTENDEE_PART_DELEGATED)
     {
       /* show subtitle only when the name != email */
-      if (g_strcmp0 (gcal_event_attendee_get_name (self->attendee), delegator_email) != 0)
+      if (name && *name && g_strcmp0 (name, delegator_email) != 0)
         subtitle = g_string_new (delegator_email ? delegator_email : "");
     }
   else
