@@ -144,6 +144,7 @@ GcalEventOrganizer * gcal_event_get_organizer                    (GcalEvent     
 
 gboolean             gcal_event_add_attendee                     (GcalEvent          *self,
                                                                   const gchar        *email,
+                                                                  const gchar        *name,
                                                                   const gchar        *organizer_email);
 
 void                 gcal_event_remove_attendee                  (GcalEvent          *self,

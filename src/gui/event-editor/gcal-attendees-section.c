@@ -22,6 +22,7 @@
 #include <gtk/gtk.h>
 #include <libintl.h>
 
+#include "gcal-attendee-row.h"
 #include "gcal-attendee-summary-row.h"
 #include "gcal-event-attendee.h"
 #include "gcal-event-organizer.h"
@@ -54,6 +55,8 @@ struct _GcalAttendeesSection
   GtkWidget           *suggestions_popover;
   GtkListBox          *suggestions;
 
+  GPtrArray           *guest_rows; /* owned by the group */
+
   GListModel          *attendees;
 };
 
@@ -81,6 +84,7 @@ gcal_attendees_section_event_set_cb (GcalEventEditorSection *section,
   GcalAttendeesSection *self = GCAL_ATTENDEES_SECTION (section);
 
   self->attendees = event ? gcal_event_get_attendees (event) : NULL;
+  self->can_edit_guests = FALSE; /* until set_calendar() runs for this event */
   gtk_editable_set_text (GTK_EDITABLE (self->add_guest_row), "");
   gtk_popover_popdown (GTK_POPOVER (self->suggestions_popover));
   adw_switch_row_set_active (self->meet_row, FALSE);
@@ -103,13 +107,16 @@ on_add_guest_row_apply_cb (GcalAttendeesSection *self)
 {
   GcalEvent *event = gcal_event_editor_section_get_event (GCAL_EVENT_EDITOR_SECTION (self));
   g_autofree gchar *email = g_strstrip (g_strdup (gtk_editable_get_text (GTK_EDITABLE (self->add_guest_row))));
-  GtkListBoxRow *suggestion = gtk_list_box_get_row_at_index (self->suggestions, 0);
+  GtkListBoxRow *suggestion = gtk_list_box_get_selected_row (self->suggestions);
+  const gchar *name = NULL;
   gboolean first_guest;
 
-  if (!is_email (email) && suggestion && gtk_widget_get_visible (self->suggestions_popover))
+  if (suggestion && gtk_widget_get_visible (self->suggestions_popover) &&
+      (!is_email (email) || g_ascii_strcasecmp (email, g_object_get_data (G_OBJECT (suggestion), "email")) == 0))
     {
       g_free (email);
       email = g_strdup (g_object_get_data (G_OBJECT (suggestion), "email"));
+      name = g_object_get_data (G_OBJECT (suggestion), "name");
     }
 
   if (!event || !is_email (email))
@@ -120,7 +127,7 @@ on_add_guest_row_apply_cb (GcalAttendeesSection *self)
 
   gtk_widget_remove_css_class (GTK_WIDGET (self->add_guest_row), "error");
   first_guest = gcal_event_get_organizer (event) == NULL;
-  gcal_event_add_attendee (event, email, self->own_email);
+  gcal_event_add_attendee (event, email, name, self->own_email);
   gtk_editable_set_text (GTK_EDITABLE (self->add_guest_row), "");
   gtk_popover_popdown (GTK_POPOVER (self->suggestions_popover));
 
@@ -147,7 +154,8 @@ gcal_attendees_section_get_property (GObject *object,
   switch (property_id)
     {
     case PROP_ATTENDEES:
-      g_value_set_object (value, self->attendees);
+      /* Editable events list their guests inline instead of in the summary rows. */
+      g_value_set_object (value, self->can_edit_guests ? NULL : self->attendees);
       break;
 
     case PROP_ORGANIZER:
@@ -186,6 +194,7 @@ gcal_attendees_section_finalize (GObject *object)
   self->attendees = NULL; /* not owned */
   g_clear_pointer (&self->own_email, g_free);
   g_clear_pointer (&self->books, g_ptr_array_unref);
+  g_clear_pointer (&self->guest_rows, g_ptr_array_unref);
 
   G_OBJECT_CLASS (gcal_attendees_section_parent_class)->finalize (object);
 }
@@ -346,6 +355,7 @@ on_contacts_found_cb (GObject      *source_object,
             adw_action_row_set_subtitle (ADW_ACTION_ROW (row), email);
           gtk_list_box_row_set_activatable (GTK_LIST_BOX_ROW (row), TRUE);
           g_object_set_data_full (G_OBJECT (row), "email", g_strdup (email), g_free);
+          g_object_set_data_full (G_OBJECT (row), "name", g_strdup (name), g_free);
           gtk_list_box_append (self->suggestions, row);
         }
 
@@ -359,6 +369,7 @@ on_contacts_found_cb (GObject      *source_object,
   if (gtk_list_box_get_row_at_index (self->suggestions, 0) && focus &&
       gtk_widget_is_ancestor (focus, GTK_WIDGET (self->add_guest_row)))
     {
+      gtk_list_box_select_row (self->suggestions, gtk_list_box_get_row_at_index (self->suggestions, 0));
       gtk_widget_set_size_request (GTK_WIDGET (self->suggestions),
                                    MAX (240, gtk_widget_get_width (GTK_WIDGET (self->add_guest_row)) - 24), -1);
       gtk_popover_popup (GTK_POPOVER (self->suggestions_popover));
@@ -409,14 +420,55 @@ on_suggestion_activated_cb (GtkListBox           *list,
                             GtkListBoxRow        *row,
                             GcalAttendeesSection *self)
 {
+  gtk_list_box_select_row (self->suggestions, row);
   gtk_editable_set_text (GTK_EDITABLE (self->add_guest_row), g_object_get_data (G_OBJECT (row), "email"));
   on_add_guest_row_apply_cb (self);
   gtk_widget_grab_focus (GTK_WIDGET (self->add_guest_row));
 }
 
+/* Arrows move through the suggestions while the keyboard stays in the email field. */
+static gboolean
+on_add_guest_row_key_pressed_cb (GtkEventControllerKey *controller,
+                                 guint                  keyval,
+                                 guint                  keycode,
+                                 GdkModifierType        state,
+                                 GcalAttendeesSection  *self)
+{
+  GtkListBoxRow *selected, *next;
+  gint index;
+
+  if (!gtk_widget_get_visible (self->suggestions_popover))
+    return GDK_EVENT_PROPAGATE;
+
+  selected = gtk_list_box_get_selected_row (self->suggestions);
+  index = selected ? gtk_list_box_row_get_index (selected) : -1;
+
+  switch (keyval)
+    {
+    case GDK_KEY_Down:
+    case GDK_KEY_KP_Down:
+    case GDK_KEY_Up:
+    case GDK_KEY_KP_Up:
+      index += keyval == GDK_KEY_Down || keyval == GDK_KEY_KP_Down ? 1 : -1;
+      next = gtk_list_box_get_row_at_index (self->suggestions, MAX (index, 0));
+      if (next)
+        gtk_list_box_select_row (self->suggestions, next);
+      return GDK_EVENT_STOP;
+
+    case GDK_KEY_Escape:
+      gtk_popover_popdown (GTK_POPOVER (self->suggestions_popover));
+      return GDK_EVENT_STOP;
+
+    default:
+      return GDK_EVENT_PROPAGATE;
+    }
+}
+
 static void
 gcal_attendees_section_init (GcalAttendeesSection *instance)
 {
+  GtkEventController *keys;
+
   gtk_widget_init_template (GTK_WIDGET (instance));
 
   instance->books = g_ptr_array_new_with_free_func (g_object_unref);
@@ -424,8 +476,9 @@ gcal_attendees_section_init (GcalAttendeesSection *instance)
   e_source_registry_new (instance->books_cancellable, on_registry_ready_cb, instance);
 
   instance->suggestions = GTK_LIST_BOX (gtk_list_box_new ());
-  gtk_list_box_set_selection_mode (instance->suggestions, GTK_SELECTION_NONE);
-  gtk_widget_add_css_class (GTK_WIDGET (instance->suggestions), "boxed-list");
+  gtk_list_box_set_selection_mode (instance->suggestions, GTK_SELECTION_SINGLE);
+  /* Plain rows with a highlight, not a card inside the popover */
+  gtk_widget_add_css_class (GTK_WIDGET (instance->suggestions), "navigation-sidebar");
   g_signal_connect (instance->suggestions, "row-activated", G_CALLBACK (on_suggestion_activated_cb), instance);
 
   /* Not autohide: an autohide popover would take the keyboard away from the entry while typing. */
@@ -437,6 +490,13 @@ gcal_attendees_section_init (GcalAttendeesSection *instance)
   gtk_widget_set_parent (instance->suggestions_popover, GTK_WIDGET (instance->add_guest_row));
 
   g_signal_connect_swapped (instance->add_guest_row, "changed", G_CALLBACK (on_add_guest_row_changed_cb), instance);
+
+  keys = gtk_event_controller_key_new ();
+  gtk_event_controller_set_propagation_phase (keys, GTK_PHASE_CAPTURE);
+  g_signal_connect (keys, "key-pressed", G_CALLBACK (on_add_guest_row_key_pressed_cb), instance);
+  gtk_widget_add_controller (GTK_WIDGET (instance->add_guest_row), keys);
+
+  instance->guest_rows = g_ptr_array_new ();
 }
 
 static void
@@ -500,9 +560,39 @@ void
 gcal_attendees_section_refresh (GcalAttendeesSection *self)
 {
   GcalEvent *event = gcal_event_editor_section_get_event (GCAL_EVENT_EDITOR_SECTION (self));
+  const gchar *organizer_uri;
 
   self->organizer = event ? gcal_event_get_organizer (event) : NULL;
-  gtk_widget_set_visible (self->organizer_row, self->organizer != NULL);
+  organizer_uri = self->organizer ? gcal_event_organizer_get_uri (self->organizer) : NULL;
+  /* When editing, the organizer is the first guest row instead. */
+  gtk_widget_set_visible (self->organizer_row, self->organizer != NULL && !self->can_edit_guests);
+
+  for (guint i = 0; i < self->guest_rows->len; i++)
+    adw_preferences_group_remove (ADW_PREFERENCES_GROUP (self), g_ptr_array_index (self->guest_rows, i));
+  g_ptr_array_set_size (self->guest_rows, 0);
+
+  for (guint i = 0; self->can_edit_guests && self->attendees && i < g_list_model_get_n_items (self->attendees); i++)
+    {
+      g_autoptr (GcalEventAttendee) attendee = g_list_model_get_item (self->attendees, i);
+      GtkWidget *row = gcal_attendee_row_new (attendee);
+
+      if (organizer_uri && g_ascii_strcasecmp (gcal_event_attendee_get_uri (attendee), organizer_uri) == 0)
+        {
+          const gchar *email = adw_action_row_get_subtitle (ADW_ACTION_ROW (row));
+          g_autofree gchar *subtitle = email && *email ? g_strdup_printf ("%s · %s", email, gettext ("Organizer"))
+                                                       : g_strdup (gettext ("Organizer"));
+
+          adw_action_row_set_subtitle (ADW_ACTION_ROW (row), subtitle);
+        }
+      else
+        {
+          gcal_attendee_row_set_removable (GCAL_ATTENDEE_ROW (row), TRUE);
+        }
+
+      adw_preferences_group_add (ADW_PREFERENCES_GROUP (self), row);
+      g_ptr_array_add (self->guest_rows, row);
+    }
+
   /* The summary rows copy the guest list when it is set, so hand it over again. */
   g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_ATTENDEES]);
   gtk_widget_set_visible (GTK_WIDGET (self),

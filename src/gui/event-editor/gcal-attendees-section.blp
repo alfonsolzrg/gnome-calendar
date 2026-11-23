@@ -19,6 +19,12 @@ template $GcalAttendeesSection: $GcalEventEditorSection {
     filter-flags: GCAL_EVENT_ATTENDEE_TYPE_FILTER_RESOURCE;
   }
 
+  Adw.SwitchRow meet_row {
+    title: _("Google Meet Video Call");
+    subtitle: _("Created when you save");
+    visible: false;
+  }
+
   Adw.EntryRow add_guest_row {
     title: _("Add Guest by Email");
     input-purpose: email;
@@ -26,11 +32,5 @@ template $GcalAttendeesSection: $GcalEventEditorSection {
     visible: false;
     apply => $on_add_guest_row_apply_cb() swapped;
     entry-activated => $on_add_guest_row_apply_cb() swapped;
-  }
-
-  Adw.SwitchRow meet_row {
-    title: _("Google Meet Video Call");
-    subtitle: _("Created when you save");
-    visible: false;
   }
 }

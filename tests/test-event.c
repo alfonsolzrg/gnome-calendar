@@ -588,15 +588,16 @@ event_edit_attendees (void)
   g_assert_null (gcal_event_get_organizer (event));
 
   /* The first guest makes the calendar owner the organizer and an accepted participant. */
-  g_assert_true (gcal_event_add_attendee (event, "guest@example.com", "me@example.com"));
-  g_assert_false (gcal_event_add_attendee (event, "GUEST@example.com", "me@example.com"));
+  g_assert_true (gcal_event_add_attendee (event, "guest@example.com", "Guest", "me@example.com"));
+  g_assert_false (gcal_event_add_attendee (event, "GUEST@example.com", NULL, "me@example.com"));
   g_assert_cmpstr (gcal_event_organizer_get_uri (gcal_event_get_organizer (event)), ==, "mailto:me@example.com");
   g_assert_cmpuint (g_list_model_get_n_items (gcal_event_get_attendees (event)), ==, 2);
   g_assert_false (gcal_event_attendees_equal (original, event));
   ical = e_cal_component_get_as_string (gcal_event_get_component (event));
   g_assert_nonnull (strstr (ical, "RSVP=TRUE"));
+  g_assert_nonnull (strstr (ical, "CN=Guest"));
 
-  g_assert_true (gcal_event_add_attendee (event, "other@example.com", "me@example.com"));
+  g_assert_true (gcal_event_add_attendee (event, "other@example.com", NULL, "me@example.com"));
   gcal_event_remove_attendee (event, "mailto:other@example.com");
   g_assert_cmpuint (g_list_model_get_n_items (gcal_event_get_attendees (event)), ==, 2);
 

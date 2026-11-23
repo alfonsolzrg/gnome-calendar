@@ -2048,6 +2048,7 @@ reload_attendees (GcalEvent *self)
  * gcal_event_add_attendee:
  * @self: a #GcalEvent
  * @email: the guest's email address
+ * @name: (nullable): the guest's display name
  * @organizer_email: (nullable): the calendar owner's address, used when @self has no organizer yet
  *
  * Invites @email. The calendar server sends the invitation when the event is saved.
@@ -2057,6 +2058,7 @@ reload_attendees (GcalEvent *self)
 gboolean
 gcal_event_add_attendee (GcalEvent   *self,
                          const gchar *email,
+                         const gchar *name,
                          const gchar *organizer_email)
 {
   g_autofree gchar *value = g_strconcat ("mailto:", email, NULL);
@@ -2093,7 +2095,7 @@ gcal_event_add_attendee (GcalEvent   *self,
   attendees = g_slist_append (attendees,
                               e_cal_component_attendee_new_full (value, NULL, I_CAL_CUTYPE_INDIVIDUAL,
                                                                  I_CAL_ROLE_REQPARTICIPANT, I_CAL_PARTSTAT_NEEDSACTION, TRUE,
-                                                                 NULL, NULL, NULL, NULL, NULL));
+                                                                 NULL, NULL, NULL, name && *name ? name : NULL, NULL));
   e_cal_component_set_attendees (self->component, attendees);
   g_slist_free_full (attendees, e_cal_component_attendee_free);
 
