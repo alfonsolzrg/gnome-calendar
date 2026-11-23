@@ -43,6 +43,8 @@ struct _GcalAttendeesSection
   GtkWidget           *organizer_row;
   AdwEntryRow         *add_guest_row;
   AdwSwitchRow        *meet_row;
+  AdwActionRow        *join_row;
+  gchar               *meeting_url;
 
   gchar               *own_email;
   gboolean             can_edit_guests;
@@ -193,10 +195,23 @@ gcal_attendees_section_finalize (GObject *object)
 
   self->attendees = NULL; /* not owned */
   g_clear_pointer (&self->own_email, g_free);
+  g_clear_pointer (&self->meeting_url, g_free);
   g_clear_pointer (&self->books, g_ptr_array_unref);
   g_clear_pointer (&self->guest_rows, g_ptr_array_unref);
 
   G_OBJECT_CLASS (gcal_attendees_section_parent_class)->finalize (object);
+}
+
+static void
+on_join_button_clicked_cb (GcalAttendeesSection *self)
+{
+  g_autoptr (GtkUriLauncher) launcher = NULL;
+
+  if (!self->meeting_url)
+    return;
+
+  launcher = gtk_uri_launcher_new (self->meeting_url);
+  gtk_uri_launcher_launch (launcher, GTK_WINDOW (gtk_widget_get_root (GTK_WIDGET (self))), NULL, NULL, NULL);
 }
 
 static void
@@ -548,6 +563,9 @@ gcal_attendees_section_class_init (GcalAttendeesSectionClass *klass)
   gtk_widget_class_bind_template_child (widget_class, GcalAttendeesSection, organizer_row);
   gtk_widget_class_bind_template_child (widget_class, GcalAttendeesSection, add_guest_row);
   gtk_widget_class_bind_template_child (widget_class, GcalAttendeesSection, meet_row);
+  gtk_widget_class_bind_template_child (widget_class, GcalAttendeesSection, join_row);
+
+  gtk_widget_class_bind_template_callback (widget_class, on_join_button_clicked_cb);
 
   gtk_widget_class_bind_template_callback (widget_class, on_add_guest_row_apply_cb);
 }
@@ -598,7 +616,8 @@ gcal_attendees_section_refresh (GcalAttendeesSection *self)
   /* The summary rows copy the guest list when it is set, so hand it over again. */
   g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_ATTENDEES]);
   gtk_widget_set_visible (GTK_WIDGET (self),
-                          self->organizer != NULL || gtk_widget_get_visible (GTK_WIDGET (self->add_guest_row)));
+                          self->organizer != NULL || gtk_widget_get_visible (GTK_WIDGET (self->add_guest_row)) ||
+                          gtk_widget_get_visible (GTK_WIDGET (self->join_row)));
   g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_ORGANIZER]);
 }
 
@@ -629,6 +648,11 @@ gcal_attendees_section_set_calendar (GcalAttendeesSection *self,
 
   if (event)
     gcal_utils_extract_meeting_url (gcal_event_get_description (event), NULL, &meeting_url);
+
+  g_free (self->meeting_url);
+  self->meeting_url = g_strdup (meeting_url);
+  gtk_widget_set_visible (GTK_WIDGET (self->join_row), meeting_url != NULL);
+  adw_action_row_set_subtitle (self->join_row, meeting_url ? meeting_url : "");
 
   /* Invitations from others also live in writable calendars; only their organizer may change guests. */
   if (event && gcal_event_get_organizer (event))

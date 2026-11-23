@@ -93,18 +93,67 @@ google_request (SoupSession  *session,
   if (!response)
     return NULL;
 
+  data = g_bytes_get_data (response, &size);
+
   if (soup_message_get_status (message) != SOUP_STATUS_OK)
     {
-      g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                   _("Google Calendar refused the request (HTTP %u)"), soup_message_get_status (message));
+      const gchar *reason = NULL;
+      JsonNode *root;
+
+      /* Google explains refusals as {"error": {"message": "..."}} */
+      if (json_parser_load_from_data (parser, data, size, NULL) &&
+          (root = json_parser_get_root (parser)) && JSON_NODE_HOLDS_OBJECT (root) &&
+          json_object_has_member (json_node_get_object (root), "error") &&
+          JSON_NODE_HOLDS_OBJECT (json_object_get_member (json_node_get_object (root), "error")))
+        reason = json_object_get_string_member_with_default (
+          json_object_get_object_member (json_node_get_object (root), "error"), "message", NULL);
+
+      g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED, _("Google Calendar refused the request (HTTP %u): %s"),
+                   soup_message_get_status (message), reason ? reason : _("no details"));
       return NULL;
     }
 
-  data = g_bytes_get_data (response, &size);
   if (!json_parser_load_from_data (parser, data, size, error))
     return NULL;
 
   return json_node_copy (json_parser_get_root (parser));
+}
+
+/* Finds the event (the series, for recurring ones) by its iCalendar UID. */
+static gboolean
+find_event (SoupSession  *session,
+            const gchar  *base,
+            const gchar  *escaped_uid,
+            const gchar  *token,
+            gchar       **out_event_id,
+            gboolean     *out_has_link,
+            GError      **error)
+{
+  g_autofree gchar *lookup = g_strdup_printf ("%s?iCalUID=%s", base, escaped_uid);
+  g_autoptr (JsonNode) root = google_request (session, "GET", lookup, token, NULL, error);
+  JsonArray *items;
+
+  *out_has_link = FALSE;
+  if (!root)
+    return FALSE;
+
+  items = JSON_NODE_HOLDS_OBJECT (root) && json_object_has_member (json_node_get_object (root), "items")
+            ? json_object_get_array_member (json_node_get_object (root), "items") : NULL;
+  for (guint i = 0; items && i < json_array_get_length (items); i++)
+    {
+      JsonObject *item = json_array_get_object_element (items, i);
+
+      /* A recurring event gets one link on the series, as Google Calendar does. */
+      if (json_object_has_member (item, "recurringEventId"))
+        continue;
+
+      *out_has_link = json_object_has_member (item, "hangoutLink");
+      g_free (*out_event_id);
+      *out_event_id = g_strdup (json_object_get_string_member_with_default (item, "id", NULL));
+      break;
+    }
+
+  return TRUE;
 }
 
 static void
@@ -126,6 +175,7 @@ add_meet_thread (GTask        *task,
   g_autofree gchar *url = NULL;
   g_autofree gchar *body = NULL;
   g_autofree gchar *request_id = g_uuid_string_random ();
+  gboolean has_link = FALSE;
 
   if (!calendar_id)
     {
@@ -146,34 +196,16 @@ add_meet_thread (GTask        *task,
   /* A new event may still be uploading to Google, so give it a few seconds to appear. */
   for (gint attempt = 0; attempt < 10 && !event_id; attempt++)
     {
-      g_autofree gchar *lookup = g_strdup_printf ("%s?iCalUID=%s", base, escaped_uid);
-      g_autoptr (JsonNode) root = google_request (session, "GET", lookup, token, NULL, &error);
-      JsonArray *items;
-
-      if (!root)
+      if (!find_event (session, base, escaped_uid, token, &event_id, &has_link, &error))
         {
           g_task_return_error (task, g_steal_pointer (&error));
           return;
         }
 
-      items = JSON_NODE_HOLDS_OBJECT (root) && json_object_has_member (json_node_get_object (root), "items")
-                ? json_object_get_array_member (json_node_get_object (root), "items") : NULL;
-      for (guint i = 0; items && i < json_array_get_length (items); i++)
+      if (has_link)
         {
-          JsonObject *item = json_array_get_object_element (items, i);
-
-          /* A recurring event gets one link on the series, as Google Calendar does. */
-          if (json_object_has_member (item, "recurringEventId"))
-            continue;
-
-          if (json_object_has_member (item, "hangoutLink"))
-            {
-              g_task_return_boolean (task, TRUE);
-              return;
-            }
-
-          event_id = g_strdup (json_object_get_string_member_with_default (item, "id", NULL));
-          break;
+          g_task_return_boolean (task, TRUE);
+          return;
         }
 
       if (!event_id)
@@ -194,8 +226,14 @@ add_meet_thread (GTask        *task,
   updated = google_request (session, "PATCH", url, token, body, &error);
   if (!updated)
     {
-      g_task_return_error (task, g_steal_pointer (&error));
-      return;
+      g_autofree gchar *ignored_id = NULL;
+
+      /* Another app (e.g. Cal Bar) may have added a call at the same time; that is a success. */
+      if (!find_event (session, base, escaped_uid, token, &ignored_id, &has_link, NULL) || !has_link)
+        {
+          g_task_return_error (task, g_steal_pointer (&error));
+          return;
+        }
     }
 
   /* Pull the link into the local calendar now instead of at the next periodic sync. */

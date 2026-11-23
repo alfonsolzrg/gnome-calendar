@@ -189,6 +189,27 @@ extract_meeting_url (void)
   g_assert_cmpstr (meeting_url, ==, "https://teams.microsoft.com/meet/12345678912345?p=0AbCdEfGjKLm1nOjTj");
 }
 
+
+/* Google's current layout (dial-in lines), with more notes before it than the delimiter is long */
+#define GOOGLE_SAMPLE_DESCRIPTION_WITH_LONG_NOTES \
+"Agenda: review the roadmap for next quarter, assign owners, and agree on the launch date.\n\n" \
+"-::~:~::~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~::~:~::-\n" \
+"Únase con Google Meet: https://meet.google.com/abc-defg-hij\n"                             \
+"O marca: (MX) +52 55 0000 0000 PIN: 123456789#\n"                                          \
+"Más números de teléfono: https://tel.meet/abc-defg-hij?pin=123456789&hs=7\n"             \
+"\n"                                                                                        \
+"No edites esta sección.\n"                                                                 \
+"-::~:~::~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~::~:~::-"
+
+static void
+extract_meeting_url_after_long_notes (void)
+{
+  g_autofree char *meeting_url = NULL;
+
+  gcal_utils_extract_meeting_url (GOOGLE_SAMPLE_DESCRIPTION_WITH_LONG_NOTES, NULL, &meeting_url);
+  g_assert_cmpstr (meeting_url, ==, "https://meet.google.com/abc-defg-hij");
+}
+
 /*********************************************************************************************************************/
 
 gint
@@ -202,6 +223,7 @@ main (gint   argc,
 
   g_test_add_func ("/utils/date-time/date_time_from_icaltime", date_time_from_icaltime);
   g_test_add_func ("/utils/misc/extract_meeting_url", extract_meeting_url);
+  g_test_add_func ("/utils/misc/extract_meeting_url_after_long_notes", extract_meeting_url_after_long_notes);
 
   return g_test_run ();
 }

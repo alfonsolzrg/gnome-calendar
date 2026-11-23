@@ -19,6 +19,23 @@ template $GcalAttendeesSection: $GcalEventEditorSection {
     filter-flags: GCAL_EVENT_ATTENDEE_TYPE_FILTER_RESOURCE;
   }
 
+  Adw.ActionRow join_row {
+    title: _("Video Call");
+    use-markup: false;
+    visible: false;
+
+    [suffix]
+    Button {
+      label: _("Join");
+      valign: center;
+      clicked => $on_join_button_clicked_cb() swapped;
+
+      styles [
+        "suggested-action",
+      ]
+    }
+  }
+
   Adw.SwitchRow meet_row {
     title: _("Google Meet Video Call");
     subtitle: _("Created when you save");
