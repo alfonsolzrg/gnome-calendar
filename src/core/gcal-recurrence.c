@@ -185,6 +185,14 @@ gcal_recurrence_parse_recurrence_rules (ECalComponent *comp)
 
       case I_CAL_WEEKLY_RECURRENCE:
         {
+#if ICAL_CHECK_VERSION(4, 0, 0)
+          if (i_cal_recurrence_get_by_array_size (rrule, I_CAL_BY_DAY) == 5 &&
+              i_cal_recurrence_get_by (rrule, I_CAL_BY_DAY, 0) == I_CAL_MONDAY_WEEKDAY &&
+              i_cal_recurrence_get_by (rrule, I_CAL_BY_DAY, 1) == I_CAL_TUESDAY_WEEKDAY &&
+              i_cal_recurrence_get_by (rrule, I_CAL_BY_DAY, 2) == I_CAL_WEDNESDAY_WEEKDAY &&
+              i_cal_recurrence_get_by (rrule, I_CAL_BY_DAY, 3) == I_CAL_THURSDAY_WEEKDAY &&
+              i_cal_recurrence_get_by (rrule, I_CAL_BY_DAY, 4) == I_CAL_FRIDAY_WEEKDAY)
+#else
           if (i_cal_recurrence_get_by_day (rrule, 0) == I_CAL_MONDAY_WEEKDAY &&
               i_cal_recurrence_get_by_day (rrule, 1) == I_CAL_TUESDAY_WEEKDAY &&
               i_cal_recurrence_get_by_day (rrule, 2) == I_CAL_WEDNESDAY_WEEKDAY &&
@@ -192,6 +200,7 @@ gcal_recurrence_parse_recurrence_rules (ECalComponent *comp)
               i_cal_recurrence_get_by_day (rrule, 4) == I_CAL_FRIDAY_WEEKDAY &&
               i_cal_recurrence_get_by_day (rrule, 5) != I_CAL_SATURDAY_WEEKDAY &&
               i_cal_recurrence_get_by_day (rrule, 6) != I_CAL_SUNDAY_WEEKDAY)
+#endif
             {
               recur->frequency = GCAL_RECURRENCE_MON_FRI;
             }
@@ -289,11 +298,20 @@ gcal_recurrence_to_rrule (GcalRecurrence *recur)
     case GCAL_RECURRENCE_MON_FRI:
       {
         i_cal_recurrence_set_freq (rrule, I_CAL_WEEKLY_RECURRENCE);
+#if ICAL_CHECK_VERSION(4, 0, 0)
+        i_cal_recurrence_resize_by_array (rrule, I_CAL_BY_DAY, 5);
+        i_cal_recurrence_set_by (rrule, I_CAL_BY_DAY, 0, I_CAL_MONDAY_WEEKDAY);
+        i_cal_recurrence_set_by (rrule, I_CAL_BY_DAY, 1, I_CAL_TUESDAY_WEEKDAY);
+        i_cal_recurrence_set_by (rrule, I_CAL_BY_DAY, 2, I_CAL_WEDNESDAY_WEEKDAY);
+        i_cal_recurrence_set_by (rrule, I_CAL_BY_DAY, 3, I_CAL_THURSDAY_WEEKDAY);
+        i_cal_recurrence_set_by (rrule, I_CAL_BY_DAY, 4, I_CAL_FRIDAY_WEEKDAY);
+#else
         i_cal_recurrence_set_by_day (rrule, 0, I_CAL_MONDAY_WEEKDAY);
         i_cal_recurrence_set_by_day (rrule, 1, I_CAL_TUESDAY_WEEKDAY);
         i_cal_recurrence_set_by_day (rrule, 2, I_CAL_WEDNESDAY_WEEKDAY);
         i_cal_recurrence_set_by_day (rrule, 3, I_CAL_THURSDAY_WEEKDAY);
         i_cal_recurrence_set_by_day (rrule, 4, I_CAL_FRIDAY_WEEKDAY);
+#endif
         break;
       }
 
